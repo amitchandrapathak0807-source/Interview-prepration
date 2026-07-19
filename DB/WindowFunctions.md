@@ -10,13 +10,13 @@ Difference between ROW_NUMBER(), RANK() and DENSE_RANK()?
 Employee Table
 
 | EmpId | Name   | Department | Salary |
------------------------------------
+|-------|--------|------------|--------|
 | 1     | Amit   | IT         | 100000 |
 | 2     | Rahul  | IT         | 90000  |
 | 3     | Priya  | IT         | 90000  |
 | 4     | John   | HR         | 80000  |
 | 5     | Alice  | HR         | 70000  |
-+-------+--------+------------+--------+
+-----------------------------------
 
 
 Window Function --> "Calculate something for each row without removing the row."
