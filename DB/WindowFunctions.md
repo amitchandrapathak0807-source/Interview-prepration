@@ -8,7 +8,7 @@ Difference between ROW_NUMBER(), RANK() and DENSE_RANK()?
 
 
 Employee Table
-+-------+--------+------------+--------+
+
 | EmpId | Name   | Department | Salary |
 +-------+--------+------------+--------+
 | 1     | Amit   | IT         | 100000 |
