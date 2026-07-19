@@ -863,20 +863,30 @@ the database may commit successfully while the event is never published.
 * Monitor queue depth, consumer lag, and DLQ size.
 
 ---
-
-# Interview Summary
-
-A senior engineer does not rely on a single RabbitMQ feature to prevent message loss. Instead, they design the system assuming failures can happen at every stage.
-
-A production-ready solution combines:
-
-* Transactional Outbox Pattern for reliable publishing
-* Publisher Confirms to verify broker receipt
-* Durable Queues and Persistent Messages for broker resilience
-* Manual Acknowledgements to avoid premature message removal
-* Idempotent Consumers to safely handle redeliveries
-* Dead Letter Queues for poison messages
-* Retry strategies with backoff
-* Monitoring and alerting
-
-Together, these patterns provide a robust **At-Least-Once Delivery** architecture that minimizes message loss while ensuring business correctness in distributed systems.
+High-Level Flow of RabbitMQ
+                Producer (.NET API)
+                       │
+        Create Business Event Message
+                       │
+                       ▼
+                  Exchange
+                       │
+         Routing Key decides destination
+                       │
+                       ▼
+                    Queue
+                       │
+      Message waits until a consumer is available
+                       │
+                       ▼
+               Consumer (.NET Worker)
+                       │
+              Process Business Logic
+                       │
+                       ▼
+                  Database
+                       │
+                 Manual ACK
+                       │
+                       ▼
+        RabbitMQ removes the message
