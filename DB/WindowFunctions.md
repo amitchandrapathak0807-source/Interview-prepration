@@ -51,7 +51,8 @@ Rahul → Roll No 2
 Priya → Roll No 3
 
 Everyone gets a unique number.
-**Example 2 - RANK()**  --  **Rank employees by salary.**
+**Example 2 - RANK()**  -- 
+**Rank employees by salary.**
 SELECT Name,
        Salary,
        RANK() OVER(ORDER BY Salary DESC) RankNo
@@ -66,11 +67,11 @@ FROM Employee;
 | Alice | 70000  |    5 |
 
 
-Example 3 - DENSE_RANK()
+**Example 3 - DENSE_RANK()**
 Same example.
-SELECT Name,
+`SELECT Name,
        Salary,
-       DENSE_RANK() OVER(ORDER BY Salary DESC) RankNo
+       DENSE_RANK() OVER(ORDER BY Salary DESC) RankNo`
 FROM Employee;
 | Name  | Salary | Rank |
 | ----- | ------ | ---: |
@@ -81,7 +82,7 @@ FROM Employee;
 | Alice | 70000  |    4 |
 
 
-Example 4 - PARTITION BY
+**Example 4 - PARTITION BY**
 
 Requirement
 
