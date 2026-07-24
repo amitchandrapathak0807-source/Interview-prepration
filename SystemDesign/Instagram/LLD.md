@@ -1,331 +1,333 @@
-# Low Level Design (LLD) - Instagram (Part 1)
+# Low-Level Design (LLD) - Instagram (Deep Dive)
 
-> **Goal:** Before writing a single class or interface, understand **why we are doing LLD**, **what problem it solves**, and **how to think like a Senior Software Engineer**.
+> **Interview Level:** Senior Software Engineer / Tech Lead / Staff Engineer (10+ Years)
+
+This explanation focuses on **how to think**, **why we make each design decision**, and **how the object model maps to the database**.
+
+> **Note:** In interviews, don't start by drawing classes. Start by understanding the business domain and modelling the real world.
 
 ---
 
-# What is Low-Level Design (LLD)?
+# 1. Why Do We Need LLD?
 
-Imagine someone asks you:
+Imagine your manager says:
 
-> **"Build Instagram."**
+> "We need to build Instagram."
 
-There are two ways to answer.
+Your first instinct might be to create a `User` class and a `Post` class.
 
-### Wrong Answer
+That is **too early**.
+
+A senior engineer first asks:
+
+- What problem are we solving?
+- Who uses the system?
+- What actions do they perform?
+- Which objects exist in the domain?
+- Which object owns which responsibility?
+- How will the design evolve when requirements change?
+
+LLD is the bridge between **business requirements** and **production-ready code**.
+
+---
+
+# 2. Think Like a Real Business
+
+Forget code for a moment.
+
+Imagine you're watching people use Instagram.
+
+### Amit opens Instagram
 
 ```text
-Create User table
-
-Create Post table
-
-Create Like table
-
-Done.
+Amit logs in.
 ```
 
-This is database design, **not** LLD.
+### Amit uploads a photo
+
+```text
+Photo = "Goa Vacation"
+Caption = "Amazing Sunset"
+```
+
+### Rahul follows Amit
+
+```text
+Rahul → Follow → Amit
+```
+
+### Priya likes the photo
+
+```text
+Priya → Like → Post
+```
+
+### Neha comments
+
+```text
+Beautiful ❤️
+```
+
+Without writing a single line of code, you have already discovered the main business objects.
 
 ---
 
-### Correct Answer
+# 3. Finding Domain Entities
 
-First ask:
+A useful interview technique:
 
-- Who are the actors?
-- What are the objects?
-- How do they interact?
-- What responsibilities does each object have?
-- Which object owns which data?
-- Which object should perform which action?
-- How do we make it extensible?
-- How do we avoid tightly coupled code?
+> **Highlight the nouns in the requirement.**
 
-This is **Object-Oriented Thinking**.
+Example:
 
-That is what LLD is.
+```text
+User uploads a photo.
+
+Another user likes the photo.
+
+Someone comments on the photo.
+```
+
+Nouns:
+
+- User
+- Photo
+- Comment
+- Like
+
+These become entities.
 
 ---
 
-# What is the Goal of LLD?
+# Why Are These Entities?
 
-LLD answers one question:
+Because each has:
 
-> **"If I have to start coding tomorrow, how should I organize my classes?"**
-
-It focuses on
-
-- Classes
-- Objects
-- Interfaces
+- Identity
+- Data
+- Lifecycle
 - Relationships
-- Design Patterns
-- SOLID Principles
-- Method Design
+
+Example:
+
+A comment has:
+
+```text
+CommentId
+Text
+CreatedDate
+UserId
+PostId
+```
+
+It has its own identity.
+
+Therefore it deserves its own entity.
 
 ---
 
-# Think Like Building a Real Instagram
+# 4. Finding Relationships
 
-Suppose tomorrow your manager says
+Let's examine each relationship carefully.
 
-> Build Instagram.
+## User → Post
 
-Would you start writing
+Question:
 
-```csharp
-public class User
-{
+Can one user create multiple posts?
 
-}
-```
+Yes.
+
+Can one post belong to multiple users?
 
 No.
 
-First you understand the business.
-
----
-
-# Step 1 - Understand the Business
-
-Ask questions.
-
-Example
-
-Can users
-
-- Upload photos?
-- Upload videos?
-- Delete posts?
-- Follow users?
-- Like posts?
-- Comment?
-- Send messages?
-- Create reels?
-- Upload stories?
-
-These become
-
-## Functional Requirements
-
----
-
-# Example
-
-Suppose the product owner says
-
-Instagram should support
-
-- Users
-- Posts
-- Comments
-- Likes
-- Followers
-
-Nothing else.
-
-Now your system becomes much simpler.
-
----
-
-# Step 2 - Think in Terms of Real World Objects
-
-Imagine you're observing Instagram in real life.
-
-You notice
+Relationship:
 
 ```text
-Amit
-
-uploads
-
-a Photo
-
-Rahul
-
-likes
-
-that Photo
-
-Priya
-
-comments
-
-Nice Picture
+User
+ 1
+ |
+ |
+ *
+Post
 ```
 
-Immediately your brain should identify
+This is called:
 
-Objects
+**One-to-Many**
+
+---
+
+## Why Not Store Posts Inside User Table?
+
+Bad design:
 
 ```text
 User
 
-Photo
-
-Comment
-
-Like
+Posts =
+[
+Post1,
+Post2,
+Post3
+]
 ```
 
-These become Classes.
+Problems:
 
----
+- Cannot query efficiently.
+- Difficult to paginate.
+- Large user records.
+- Difficult to index.
 
-# Rule #1 of LLD
-
-> Every important noun usually becomes a Class.
-
-Example
-
-Sentence
-
-```
-User uploads a Photo.
-```
-
-Nouns
-
-```
-User
-
-Photo
-```
-
-Classes
+Instead:
 
 ```text
 User
 
-Photo
-```
-
-Another sentence
-
-```
-User writes Comment.
-```
-
-Nouns
-
-```
-User
-
-Comment
-```
-
-Classes
-
-```
-User
-
-Comment
-```
-
----
-
-# Example
-
-Real World
-
-```text
-John
-
-uploads
-
-Vacation.jpg
-```
-
-Objects
-
-```text
-User
+↓
 
 Post
 
-Media
+UserId
 ```
 
-Question
-
-Should User store image bytes?
-
-No.
-
-Because
-
-A User is **not responsible** for storing media.
-
-A Media object is.
-
-This is called
-
-> **Responsibility Assignment**
+The database naturally models the relationship.
 
 ---
 
-# Responsibility Assignment
+## User → Follow
 
-Suppose
+Question:
 
-Instagram has
+Can Amit follow Rahul?
+
+Yes.
+
+Can Rahul follow Amit?
+
+Yes.
+
+Can Rahul follow Neha?
+
+Yes.
+
+Relationship:
 
 ```text
-100 Million Users
+User
+
+*
+
+|
+
+|
+
+*
+
+User
 ```
 
-Question
+Many-to-Many.
 
-Should User class store comments?
-
-Maybe.
-
-Should User class send notifications?
-
-No.
-
-Why?
-
-Because
-
-Notification has its own responsibility.
+This requires a junction table.
 
 ---
 
-# Bad Design
+## Why Not Store Followers in User Table?
+
+Wrong:
+
+```text
+User
+
+Followers
+
+101
+
+205
+
+400
+
+900
+```
+
+Problems:
+
+- Unlimited growth.
+- Difficult indexing.
+- Difficult joins.
+- Poor normalization.
+
+Correct:
+
+```text
+Follow Table
+
+FollowerId
+
+FollowingId
+```
+
+---
+
+# 5. What Belongs Inside User?
+
+Many developers make this mistake.
 
 ```csharp
 class User
 {
-    public void UploadPhoto(){}
+    UploadPhoto()
 
-    public void SendNotification(){}
+    LikePost()
 
-    public void LikePost(){}
+    DeleteComment()
 
-    public void DeleteComment(){}
+    GenerateFeed()
 
-    public void CompressVideo(){}
+    SendNotification()
 
-    public void ProcessPayment(){}
-
-    public void SearchUsers(){}
+    Search()
 }
 ```
 
-Everything inside User.
+This is terrible.
 
-Huge class.
+Why?
 
-Impossible to maintain.
+Because User now knows everything.
 
-This is called
+It violates:
 
+- Single Responsibility Principle.
+- Open/Closed Principle.
+- Separation of Concerns.
+
+---
+
+# What Should User Really Represent?
+
+Think of User as a real person.
+
+A person has:
+
+```text
+Id
+
+Username
+
+Email
+
+DOB
+
+Profile
 ```
-God Class
-```
 
-Very common interview mistake.
+That's it.
+
+Business operations belong elsewhere.
 
 ---
 
@@ -336,40 +338,202 @@ User
 
 ↓
 
+UserService
+
+↓
+
 PostService
 
 ↓
 
+LikeService
+
+↓
+
 NotificationService
-
-↓
-
-SearchService
-
-↓
-
-MediaService
 ```
 
-Each service has one responsibility.
+Each service owns one business capability.
 
-This follows
+---
 
+# 6. Why Do We Need Services?
+
+Let's examine uploading a photo.
+
+User clicks:
+
+```text
+Upload
 ```
-Single Responsibility Principle
+
+What happens?
+
+### Step 1
+
+Authenticate.
+
+### Step 2
+
+Validate image.
+
+### Step 3
+
+Resize image.
+
+### Step 4
+
+Generate thumbnail.
+
+### Step 5
+
+Upload to Blob Storage.
+
+### Step 6
+
+Save metadata.
+
+### Step 7
+
+Generate feed.
+
+### Step 8
+
+Notify followers.
+
+Should all this live inside:
+
+```csharp
+User.UploadPhoto()
+```
+
+No.
+
+That's why we create:
+
+```text
+PostService
 ```
 
 ---
 
-# Step 3 - Identify Relationships
+# 7. Responsibilities
 
-Now ask
+## User
 
+Responsible for
+
+- Identity
+- Profile
+
+NOT
+
+- Notifications
+- Feed
+- Search
+- Blob upload
+
+---
+
+## Post
+
+Responsible for
+
+- Caption
+- Media
+- Creation date
+
+NOT
+
+- Sending push notifications.
+
+---
+
+## Like
+
+Responsible for
+
+- Who liked.
+- Which post.
+
+Nothing else.
+
+---
+
+## Comment
+
+Responsible for
+
+- Text.
+- Owner.
+- Timestamp.
+
+---
+
+# 8. Database Schema
+
+Now that we understand the domain, the database becomes much easier.
+
+---
+
+# USER
+
+```sql
+CREATE TABLE Users
+(
+    UserId UNIQUEIDENTIFIER PRIMARY KEY,
+
+    UserName NVARCHAR(100) UNIQUE,
+
+    Email NVARCHAR(200),
+
+    PasswordHash NVARCHAR(MAX),
+
+    ProfilePictureUrl NVARCHAR(MAX),
+
+    Bio NVARCHAR(500),
+
+    CreatedAt DATETIME2
+)
 ```
-Can one User have multiple Posts?
-```
 
-Yes.
+---
+
+## Why these columns?
+
+| Column | Reason |
+|----------|--------|
+| UserId | Primary Key |
+| UserName | Login/Search |
+| Email | Authentication |
+| PasswordHash | Security |
+| Bio | Profile |
+| ProfilePictureUrl | Display |
+
+---
+
+# POST
+
+```sql
+CREATE TABLE Posts
+(
+    PostId UNIQUEIDENTIFIER PRIMARY KEY,
+
+    UserId UNIQUEIDENTIFIER,
+
+    Caption NVARCHAR(MAX),
+
+    MediaUrl NVARCHAR(MAX),
+
+    MediaType INT,
+
+    CreatedAt DATETIME2,
+
+    FOREIGN KEY(UserId)
+
+    REFERENCES Users(UserId)
+)
+```
 
 Relationship
 
@@ -377,539 +541,338 @@ Relationship
 User
 
 1
-
-|
-
-|
-
-*
-
-Post
-```
-
-One User
 
 ↓
 
 Many Posts
-
----
-
-Question
-
-Can one Post have multiple Comments?
-
-Yes.
-
-```text
-Post
-
-1
-
-|
-
-|
-
-*
-
-Comment
 ```
 
 ---
 
-Question
+# COMMENT
 
-Can one Post have multiple Likes?
+```sql
+CREATE TABLE Comments
+(
+    CommentId UNIQUEIDENTIFIER PRIMARY KEY,
 
-Yes.
+    UserId UNIQUEIDENTIFIER,
 
-```text
-Post
+    PostId UNIQUEIDENTIFIER,
 
-1
+    Text NVARCHAR(MAX),
 
-|
-
-|
-
-*
-
-Like
+    CreatedAt DATETIME2
+)
 ```
-
----
-
-Question
-
-Can User follow many Users?
-
-Yes.
-
-Can User be followed by many Users?
-
-Yes.
 
 Relationship
 
 ```text
 User
 
-*
-
-|
-
-|
-
-*
-
-User
-```
-
-This is called
-
-```
-Many to Many
-```
-
----
-
-# Step 4 - Find Responsibilities
-
-Don't immediately think
-
-```
-Database
-```
-
-Instead ask
-
-Who should perform this action?
-
-Example
-
-```
-Like Post
-```
-
-Who should do it?
-
-User?
-
-Post?
-
-LikeService?
-
----
-
-Bad Design
-
-```csharp
-class User
-{
-    public void Like(Post post)
-    {
-
-    }
-}
-```
-
-Looks okay initially.
-
-But later
-
-Need
-
-- Duplicate Like Validation
-- Notification
-- Analytics
-- Cache Update
-- Event Publishing
-
-Now User becomes huge.
-
----
-
-Better
-
-```text
-User
-
 ↓
-
-LikeService
-
-↓
-
-Repository
-
-↓
-
-Database
-```
-
-Why?
-
-Because LikeService owns the business logic.
-
----
-
-# Example
-
-Like Flow
-
-```text
-User clicks Like
-
-↓
-
-LikeService
-
-↓
-
-Check
-
-Already Liked?
-
-↓
-
-No
-
-↓
-
-Save Like
-
-↓
-
-Increase Count
-
-↓
-
-Send Notification
-
-↓
-
-Publish Event
-```
-
-Notice
-
-Everything related to Likes stays together.
-
----
-
-# Step 5 - Find Entities vs Services
-
-This is where many candidates fail.
-
-Example
-
-```
-User
-```
-
-Is it Entity?
-
-Yes.
-
-Because it stores data.
-
----
-
-Example
-
-```
-LikeService
-```
-
-Stores data?
-
-No.
-
-Performs action?
-
-Yes.
-
-So
-
-```
-Service
-```
-
----
-
-Rule
-
-Entities
-
-```text
-User
-
-Post
 
 Comment
 
-Like
+↓
 
-Profile
-```
-
-Services
-
-```text
-UserService
-
-FeedService
-
-CommentService
-
-LikeService
-
-NotificationService
-```
-
----
-
-# Step 6 - Think About Future Changes
-
-Suppose today
-
-Instagram supports
-
-```
-Photo
-```
-
-Tomorrow
-
-Need
-
-```
-Video
-
-Reels
-
-Stories
-```
-
-Question
-
-Should you modify
-
-```
 Post
 ```
 
-every time?
+---
 
-No.
+# LIKE
 
-Instead
+```sql
+CREATE TABLE Likes
+(
+    UserId UNIQUEIDENTIFIER,
 
-Use
+    PostId UNIQUEIDENTIFIER,
+
+    CreatedAt DATETIME2,
+
+    PRIMARY KEY(UserId,PostId)
+)
+```
+
+Why Composite Key?
+
+Because
+
+One user
+
+Cannot like
+
+Same post twice.
+
+---
+
+# FOLLOW
+
+```sql
+CREATE TABLE Follows
+(
+    FollowerId UNIQUEIDENTIFIER,
+
+    FollowingId UNIQUEIDENTIFIER,
+
+    CreatedAt DATETIME2,
+
+    PRIMARY KEY
+    (
+        FollowerId,
+
+        FollowingId
+    )
+)
+```
+
+Relationship
 
 ```text
-Media
+Rahul
 
-▲
+↓
 
-|
+Follows
 
-|
+↓
 
-Image
-
-Video
-
-Story
-
-Reel
+Amit
 ```
 
-Now adding
+This table stores only relationships.
 
-```
-LiveStream
-```
+---
 
-doesn't affect existing code.
+# NOTIFICATION
 
-This follows the
+```sql
+CREATE TABLE Notifications
+(
+    NotificationId UNIQUEIDENTIFIER PRIMARY KEY,
 
-```
-Open/Closed Principle
+    UserId UNIQUEIDENTIFIER,
+
+    Type INT,
+
+    Message NVARCHAR(MAX),
+
+    IsRead BIT,
+
+    CreatedAt DATETIME2
+)
 ```
 
 ---
 
-# Why Services Instead of Putting Everything in User?
+# SAVED POSTS
 
-Imagine this method:
+```sql
+CREATE TABLE SavedPosts
+(
+    UserId UNIQUEIDENTIFIER,
 
-```csharp
-user.UploadPost();
+    PostId UNIQUEIDENTIFIER,
+
+    SavedAt DATETIME2,
+
+    PRIMARY KEY
+    (
+        UserId,
+
+        PostId
+    )
+)
 ```
 
-Seems fine.
+---
 
-Now requirements grow:
-
-- Virus scanning
-- Image resizing
-- AI moderation
-- Blob storage upload
-- Metadata extraction
-- Thumbnail generation
-- Feed update
-- Notification
-- Analytics
-
-Would you still keep all of that inside `User`?
-
-No.
-
-Instead:
+# Complete Database ER Diagram
 
 ```text
-User
+                 USERS
++-----------------------------------+
+| PK UserId                         |
+| UserName                          |
+| Email                             |
+| PasswordHash                      |
+| Bio                               |
+| ProfilePictureUrl                 |
+| CreatedAt                         |
++----------------+------------------+
+                 |
+                 | 1
+                 |
+                 | *
+          +------v------------------+
+          |        POSTS            |
+          +-------------------------+
+          | PK PostId               |
+          | FK UserId               |
+          | Caption                 |
+          | MediaUrl                |
+          | MediaType               |
+          | CreatedAt               |
+          +------+------------------+
+                 |
+        +--------+---------+
+        |                  |
+      1 |                  | 1
+        |                  |
+        | *                | *
++-------v---------+   +----v-----------+
+|   COMMENTS      |   |    LIKES       |
++-----------------+   +----------------+
+| PK CommentId    |   | PK UserId      |
+| FK PostId       |   | PK PostId      |
+| FK UserId       |   | CreatedAt      |
+| Text            |   +----------------+
+| CreatedAt       |
++-----------------+
 
-↓
+USERS
+   *
+   |
+   |
+   *
+FOLLOWS
++---------------------------+
+| PK FollowerId             |
+| PK FollowingId            |
+| CreatedAt                 |
++---------------------------+
 
-PostService
+USERS
+   *
+   |
+   |
+   *
+SAVED POSTS
++---------------------------+
+| PK UserId                 |
+| PK PostId                 |
+| SavedAt                   |
++---------------------------+
 
-↓
-
-MediaService
-
-↓
-
-Blob Storage
-
-↓
-
-Repository
-
-↓
-
-NotificationService
-
-↓
-
-FeedService
+USERS
+   1
+   |
+   |
+   *
+NOTIFICATIONS
++---------------------------+
+| PK NotificationId         |
+| FK UserId                 |
+| Type                      |
+| Message                   |
+| IsRead                    |
+| CreatedAt                 |
++---------------------------+
 ```
-
-The `User` object represents **state**, while services represent **behavior involving multiple systems**.
 
 ---
 
-# Example: Uploading a Photo (Real Flow)
+# Why Normalize the Database?
 
-Suppose Amit uploads a vacation photo.
-
-What actually happens?
+Suppose we stored comments inside the `Posts` table:
 
 ```text
-Amit Clicks Upload
+Post
 
-        │
+Comment1
 
-        ▼
+Comment2
 
-API Receives Request
+Comment3
 
-        │
+Comment4
 
-        ▼
-
-Authentication
-
-        │
-
-        ▼
-
-PostService
-
-        │
-
-        ├────────► Upload File to Azure Blob Storage
-
-        │
-
-        ├────────► Save Metadata in Database
-
-        │
-
-        ├────────► Generate Thumbnail
-
-        │
-
-        ├────────► Publish Event
-
-        │
-
-        ├────────► Feed Service
-
-        │
-
-        └────────► Notification Service
+Comment5
 ```
 
-One click triggers multiple systems.
+Problems:
 
-This is why we don't put everything inside one class.
+- Variable-sized rows.
+- Difficult querying.
+- Impossible to index comments efficiently.
+- Updating a single comment rewrites the entire row.
 
----
-
-# How Should You Think During an Interview?
-
-Never jump directly into coding.
-
-Instead, say:
-
-> "Before I start writing classes, I'd like to identify the domain entities, understand their responsibilities, define relationships, and separate business logic into services following SOLID principles. This will keep the design maintainable and extensible."
-
-This immediately demonstrates senior-level design thinking.
+Normalization solves these issues by storing comments separately.
 
 ---
 
-# Coming Next (Part 2)
+# Indexing Strategy
 
-In the next part, we will cover:
+A production system should create indexes based on query patterns.
 
-1. Domain Model
-2. Complete Class Diagram
-3. Associations, Aggregation, and Composition
-4. Interfaces
-5. Service Layer
-6. Repository Layer
-7. Design Patterns
-8. Sequence Diagrams
-9. Database Mapping
-10. API Design
-11. Concurrency
-12. Interview Questions
+```sql
+CREATE INDEX IX_Post_UserId
+ON Posts(UserId);
+```
+
+Used for:
+
+```sql
+SELECT *
+FROM Posts
+WHERE UserId = @UserId;
+```
+
+---
+
+```sql
+CREATE INDEX IX_Comments_PostId
+ON Comments(PostId);
+```
+
+Used for:
+
+```sql
+SELECT *
+FROM Comments
+WHERE PostId = @PostId;
+```
+
+---
+
+```sql
+CREATE INDEX IX_Follows_FollowerId
+ON Follows(FollowerId);
+```
+
+Used for:
+
+```sql
+SELECT FollowingId
+FROM Follows
+WHERE FollowerId = @UserId;
+```
 
 ---
 
 # Interview Questions & Answers (10+ Years Experience)
 
-## Q1. Why do we perform LLD before writing code?
+## Q1. Why do we separate entities and services?
 
 ### Answer
 
-LLD helps translate business requirements into a maintainable object-oriented design. Instead of immediately writing classes, we first identify domain entities, assign responsibilities, define relationships, apply SOLID principles, and choose appropriate design patterns. This reduces coupling, improves readability, simplifies testing, and makes the system easier to extend as new requirements emerge.
+Entities model the **business state** (e.g., `User`, `Post`, `Comment`) and should contain only behavior directly related to that state. Services orchestrate workflows that involve multiple entities or external systems (e.g., uploading media, sending notifications, generating feeds). Separating them improves maintainability, testability, and adherence to the Single Responsibility Principle.
 
 ---
 
-## Q2. How do you identify classes during an interview?
+## Q2. Why is the `Follows` table implemented as a junction table?
 
 ### Answer
 
-I begin by reading the requirements and identifying the **important nouns**, which often become domain entities (e.g., `User`, `Post`, `Comment`, `Like`). Then I identify the **verbs**, which usually become behaviors or service methods (e.g., `Follow()`, `LikePost()`, `AddComment()`). Finally, I determine which object should own each responsibility based on the Single Responsibility Principle.
+Following is a **many-to-many** relationship: one user can follow many users, and one user can be followed by many users. A junction table (`FollowerId`, `FollowingId`) models this efficiently, supports indexing, avoids data duplication, and allows additional metadata (e.g., `CreatedAt`) to be stored.
 
 ---
 
-## Q3. Why shouldn't a `User` class contain all business logic?
+## Q3. Why use a composite primary key for the `Likes` table?
 
 ### Answer
 
-A `User` entity should primarily represent the user's state and core behavior. Business workflows such as uploading media, sending notifications, generating feeds, or processing likes often involve multiple systems and external dependencies. Placing all of this logic inside `User` creates a **God Class**, violating the Single Responsibility Principle and making the code difficult to maintain, test, and extend. Instead, these workflows belong in dedicated service classes such as `PostService`, `FeedService`, and `NotificationService`.
+The business rule is that **a user can like a specific post only once**. A composite primary key `(UserId, PostId)` enforces this rule at the database level, preventing duplicate likes even under concurrent requests. It also avoids the need for a separate surrogate key for this relationship.
