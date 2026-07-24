@@ -1,417 +1,861 @@
-# Index Seek vs Index Scan (SQL Server Interview)
+# C# API Performance Troubleshooting Guide
 
-One of the most common SQL Server interview questions is:
+## Scenario
 
-> **What is the difference between an Index Seek and an Index Scan?**
+Suppose we have the following API:
 
-The key difference is **how much of the index SQL Server reads**.
+```http
+GET /api/orders/12345
+```
 
-- **Index Seek** → Reads only the required rows.
-- **Index Scan** → Reads the entire index (or a large portion of it).
+Expected Response Time:
+- < 300 ms
 
-Think of it like searching for a word in a dictionary.
+Current Response Time:
+- 6-8 seconds
 
-- **Index Seek** = Open directly to the page containing the word.
-- **Index Scan** = Start from page 1 and read every page until you find it.
+Your task is to identify where the time is being spent.
 
 ---
 
-# Example Table
+# Step 1: Reproduce the Issue
 
-Suppose we have an `Employee` table with **1 million rows**.
+Never start optimizing blindly.
 
-```sql
-CREATE TABLE Employee
-(
-    EmployeeId INT PRIMARY KEY,
-    Name VARCHAR(100),
-    Email VARCHAR(200),
-    Salary DECIMAL(10,2)
-);
+Measure first.
+
+Tools:
+
+- Postman
+- Swagger
+- curl
+- k6
+- JMeter
+
+Example
+
+```
+GET /api/orders/12345
 ```
 
-Create an index:
+Response Time
 
-```sql
-CREATE INDEX IX_Email
-ON Employee(Email);
+```
+7.2 seconds
+```
+
+Now we know the issue is reproducible.
+
+---
+
+# Step 2: Check Logs
+
+First thing I check is application logs.
+
+Example
+
+```
+Request Started
+Time : 10:00:00.000
+
+Request Completed
+Time : 10:00:07.240
+```
+
+Now we know
+
+Total Time
+
+```
+7240 ms
+```
+
+But where?
+
+Need detailed logging.
+
+Example
+
+```csharp
+_logger.LogInformation("Fetching Order");
+
+var order = await repository.GetOrder(id);
+
+_logger.LogInformation("Fetching Customer");
+
+var customer = await repository.GetCustomer(order.CustomerId);
+
+_logger.LogInformation("Generating Invoice");
+
+var invoice = await invoiceService.Generate(order);
+```
+
+Output
+
+```
+Fetch Order       50ms
+Fetch Customer    40ms
+Invoice Service   6900ms
+```
+
+Problem Found.
+
+---
+
+# Step 3: Use ASP.NET Core Logging
+
+Measure each middleware.
+
+Example
+
+```csharp
+app.Use(async (context, next) =>
+{
+    var sw = Stopwatch.StartNew();
+
+    await next();
+
+    sw.Stop();
+
+    Console.WriteLine($"Request took {sw.ElapsedMilliseconds} ms");
+});
+```
+
+Output
+
+```
+Request took 7200 ms
 ```
 
 ---
 
-# 1. Index Seek
+# Step 4: Check SQL Queries
 
-Query:
+Usually this is the biggest bottleneck.
+
+Enable logging
+
+```csharp
+options.LogTo(Console.WriteLine)
+       .EnableSensitiveDataLogging();
+```
+
+Look for
+
+- Slow SQL
+- Multiple Queries
+- Full Table Scan
+- Missing Index
+
+Example
+
+Generated SQL
 
 ```sql
 SELECT *
-FROM Employee
-WHERE Email = 'john@gmail.com';
+FROM Orders
 ```
 
-### Execution
+Table
 
 ```
-Index
-
-A
-B
-C
-D
-...
-J  <-- SQL Server jumps directly here
-...
-Z
+5 Million Rows
 ```
 
-SQL Server knows exactly where the value exists.
+Bad.
 
-Execution Plan
+Instead
+
+```sql
+SELECT OrderId,
+       CustomerId,
+       Status
+FROM Orders
+WHERE OrderId = 123
+```
+
+Huge improvement.
+
+---
+
+# Step 5: Check Execution Plan
+
+Suppose SQL query takes
+
+```
+5.8 seconds
+```
+
+Open Actual Execution Plan.
+
+Look for
+
+❌ Table Scan
+
+Instead of
+
+✅ Index Seek
+
+Example
+
+Before
+
+```
+Table Scan
+
+Cost : 92%
+```
+
+After creating index
+
+```sql
+CREATE INDEX IX_Orders_OrderId
+ON Orders(OrderId);
+```
+
+Now
 
 ```
 Index Seek
+
+Cost : 3%
 ```
-
-Rows Read
-
-```
-1
-```
-
-Performance
-
-```
-Very Fast
-```
-
-Time
-
-```
-2-5 ms
-```
-
----
-
-# Why?
-
-The index is sorted.
-
-Example:
-
-```
-abc@gmail.com
-adam@gmail.com
-amit@gmail.com
-john@gmail.com
-mary@gmail.com
-```
-
-SQL Server performs something similar to a binary search and jumps directly to the matching entry.
-
-Complexity
-
-```
-O(log n)
-```
-
----
-
-# 2. Index Scan
 
 Query
 
+```
+5800ms
+
+↓
+
+20ms
+```
+
+---
+
+# Step 6: Check EF Core
+
+Bad
+
+```csharp
+var orders = await context.Orders.ToListAsync();
+```
+
+Loads entire table.
+
+Good
+
+```csharp
+var order = await context.Orders
+            .Where(x => x.Id == id)
+            .Select(x => new
+            {
+                x.Id,
+                x.Status
+            })
+            .FirstOrDefaultAsync();
+```
+
+Only required columns.
+
+---
+
+# Step 7: Check N+1 Query Problem
+
+Bad
+
+```csharp
+foreach(var order in orders)
+{
+    var customer = context.Customers
+        .First(x=>x.Id==order.CustomerId);
+}
+```
+
+100 Orders
+
+↓
+
+101 SQL Queries
+
+Better
+
+```csharp
+.Include(x=>x.Customer)
+```
+
+or
+
+Projection
+
+```csharp
+.Select(...)
+```
+
+Single Query.
+
+---
+
+# Step 8: Check External APIs
+
+Suppose
+
+```
+Order API
+
+↓
+
+Payment API
+
+↓
+
+Shipping API
+
+↓
+
+Notification API
+```
+
+Each takes
+
+```
+2 sec
+```
+
+Total
+
+```
+6 seconds
+```
+
+Measure individually.
+
+Example
+
+```csharp
+var sw = Stopwatch.StartNew();
+
+await paymentClient.Get();
+
+sw.Stop();
+
+Console.WriteLine(sw.ElapsedMilliseconds);
+```
+
+Output
+
+```
+Payment API
+
+1980 ms
+```
+
+Found bottleneck.
+
+---
+
+# Step 9: Check Parallel Calls
+
+Bad
+
+```csharp
+var payment = await GetPayment();
+
+var shipment = await GetShipment();
+
+var invoice = await GetInvoice();
+```
+
+Total
+
+```
+2 + 2 + 2
+
+=
+
+6 sec
+```
+
+Good
+
+```csharp
+var paymentTask = GetPayment();
+var shipmentTask = GetShipment();
+var invoiceTask = GetInvoice();
+
+await Task.WhenAll(paymentTask,
+                   shipmentTask,
+                   invoiceTask);
+```
+
+Total
+
+```
+≈2 seconds
+```
+
+---
+
+# Step 10: Check Thread Blocking
+
+Bad
+
+```csharp
+Thread.Sleep(3000);
+```
+
+Bad
+
+```csharp
+Task.Result
+```
+
+Bad
+
+```csharp
+Task.Wait();
+```
+
+Good
+
+```csharp
+await Task.Delay(3000);
+```
+
+Always use async/await.
+
+---
+
+# Step 11: Check Connection Pool Exhaustion
+
+Symptoms
+
+```
+Random delays
+
+Timeout expired
+
+Waiting for connection
+```
+
+Bad
+
+```csharp
+new SqlConnection()
+```
+
+Never disposed.
+
+Good
+
+```csharp
+await using var connection = new SqlConnection(cs);
+```
+
+Also check
+
+```
+Max Pool Size
+```
+
+---
+
+# Step 12: Check HTTP Client Usage
+
+Bad
+
+```csharp
+new HttpClient();
+```
+
+inside every request.
+
+Causes
+
+```
+Socket Exhaustion
+```
+
+Good
+
+```csharp
+builder.Services.AddHttpClient();
+```
+
+Use IHttpClientFactory.
+
+---
+
+# Step 13: Check Memory Usage
+
+Monitor
+
+- RAM
+- GC Collections
+- LOH
+
+Tools
+
+```
+dotnet-counters
+
+dotnet-trace
+
+Visual Studio Diagnostic Tools
+
+PerfView
+```
+
+Example
+
+```
+GC
+
+Gen0 : 500/sec
+
+Gen1 : 150/sec
+
+Gen2 : 40/sec
+```
+
+Too many allocations.
+
+---
+
+# Step 14: Check CPU Usage
+
+If CPU
+
+```
+95%
+```
+
+Look for
+
+- Infinite loops
+- Serialization
+- LINQ
+- Regex
+- JSON Conversion
+
+Use
+
+```
+dotnet-trace
+
+Visual Studio Profiler
+```
+
+---
+
+# Step 15: Check Serialization
+
+Large Objects
+
+```
+20 MB JSON
+```
+
+Example
+
+```csharp
+return Ok(bigObject);
+```
+
+Instead
+
+Return only required fields.
+
+```csharp
+.Select(...)
+```
+
+Compress Response
+
+```csharp
+app.UseResponseCompression();
+```
+
+---
+
+# Step 16: Check Caching
+
+Repeated query
+
 ```sql
 SELECT *
-FROM Employee
-WHERE Salary > 50000;
+FROM Countries
 ```
 
-Suppose there is **no index on Salary**.
-
-Execution
+Runs
 
 ```
-Row 1
-Row 2
-Row 3
-Row 4
-...
-Row 1,000,000
+1000 times/minute
 ```
+
+Use
+
+```csharp
+IMemoryCache
+```
+
+Example
+
+```csharp
+cache.GetOrCreate("Countries", ...);
+```
+
+Response
+
+```
+250 ms
+
+↓
+
+5 ms
+```
+
+---
+
+# Step 17: Check Middleware
+
+Too many middleware
+
+```
+Authentication
+
+↓
+
+Authorization
+
+↓
+
+Logging
+
+↓
+
+Compression
+
+↓
+
+Localization
+
+↓
+
+Custom Middleware
+
+↓
+
+Controller
+```
+
+Measure each.
+
+---
+
+# Step 18: Distributed Tracing
+
+If Microservices
+
+Use
+
+- OpenTelemetry
+- Jaeger
+- Zipkin
+- Azure Application Insights
+
+See
+
+```
+API
+
+↓
+
+Service A
+
+↓
+
+Service B
+
+↓
+
+SQL
+
+↓
+
+Redis
+```
+
+Know exactly where time is spent.
+
+---
+
+# Step 19: Check Network Latency
+
+Sometimes application is fast.
+
+Network is slow.
+
+Example
+
+Server
+
+```
+20 ms
+```
+
+Browser
+
+```
+3 sec
+```
+
+Check
+
+- DNS
+- VPN
+- Firewall
+- Load Balancer
+- Reverse Proxy
+
+---
+
+# Step 20: Load Testing
+
+Use
+
+- k6
+- JMeter
+
+Example
+
+```
+100 Users
+
+↓
+
+500 Users
+
+↓
+
+1000 Users
+```
+
+Observe
+
+- CPU
+- Memory
+- Response Time
+- SQL
+- Errors
+
+---
+
+# Example Investigation Timeline
+
+User reports:
+
+```
+GET /api/orders/12345
+
+7.2 sec
+```
+
+### Step 1
+
+Logs
+
+```
+Request
+
+7200 ms
+```
+
+↓
+
+### Step 2
+
+SQL Query
+
+```
+5800 ms
+```
+
+↓
 
 Execution Plan
 
 ```
-Index Scan
+Table Scan
 ```
 
-Rows Read
+↓
+
+### Step 3
+
+Added Index
 
 ```
-1,000,000
+5800 ms
+
+↓
+
+25 ms
 ```
 
-Performance
+↓
+
+### Step 4
+
+External Payment API
 
 ```
-Slower
+1900 ms
 ```
 
-Time
+↓
+
+### Step 5
+
+Parallelized API Calls
 
 ```
-800 ms
+1900 + 1800 + 1700
+
+↓
+
+1950 ms
 ```
+
+↓
+
+### Step 6
+
+Enabled Memory Cache
+
+```
+Database
+
+↓
+
+No DB Hit
+```
+
+↓
+
+### Final Result
+
+| Stage | Before | After |
+|---------|--------|-------|
+| SQL | 5800 ms | 25 ms |
+| External APIs | 6000 ms | 1950 ms |
+| JSON Serialization | 300 ms | 60 ms |
+| Total API Time | 7200 ms | 280 ms |
 
 ---
 
-# Another Example
-
-Suppose Email has an index.
-
-Query:
-
-```sql
-SELECT *
-FROM Employee
-WHERE Email LIKE '%gmail.com';
-```
-
-Execution Plan
-
-```
-Index Scan
-```
-
-Why?
-
-The wildcard at the beginning (`%gmail.com`) prevents SQL Server from locating a starting point in the index.
-
-It must inspect every index entry.
-
----
-
-# Index Seek Example
-
-```sql
-SELECT *
-FROM Employee
-WHERE Email LIKE 'john%';
-```
-
-Execution Plan
-
-```
-Index Seek
-```
-
-Because SQL Server can directly seek to the first value beginning with `john`.
-
----
-
-# Visual Comparison
-
-## Index Seek
-
-```
-Index
-
-A
-B
-C
-D
-E
-F
-G
-H
-I
-J  <-- Jump directly
-K
-L
-```
-
-Only a few pages are read.
-
----
-
-## Index Scan
-
-```
-Index
-
-A
-B
-C
-D
-E
-F
-G
-H
-I
-J
-K
-L
-```
-
-Every page is read.
-
----
-
-# Real-Life Analogy
-
-## Index Seek
-
-Searching a phone contact:
-
-```
-John Smith
-```
-
-You type:
-
-```
-John
-```
-
-Phone jumps directly.
-
-Time:
-
-```
-1 second
-```
-
----
-
-## Index Scan
-
-You only remember:
-
-```
-Ends with Smith
-```
-
-Now you manually check every contact.
-
-Time:
-
-```
-Much Longer
-```
-
----
-
-# When Does SQL Server Choose an Index Scan?
-
-- No suitable index exists.
-- A function is applied to the indexed column.
-- Leading wildcard (`LIKE '%abc'`).
-- Implicit data type conversion.
-- The query returns a very large percentage of the table (e.g., 80–90%). In such cases, scanning can be cheaper than seeking many rows.
-
-Example:
-
-```sql
-SELECT *
-FROM Employee
-WHERE Salary > 0;
-```
-
-If nearly every row qualifies, SQL Server may choose an **Index Scan** because reading the entire index sequentially is more efficient than many random lookups.
-
----
-
-# How to Convert a Scan into a Seek
-
-### ❌ Function on Indexed Column
-
-```sql
-WHERE YEAR(HireDate) = 2025;
-```
-
-✅ Rewrite:
-
-```sql
-WHERE HireDate >= '2025-01-01'
-AND HireDate < '2026-01-01';
-```
-
----
-
-### ❌ Leading Wildcard
-
-```sql
-WHERE Name LIKE '%John';
-```
-
-✅ Rewrite:
-
-```sql
-WHERE Name LIKE 'John%';
-```
-
----
-
-### ❌ Missing Index
-
-```sql
-WHERE Email = 'abc@gmail.com';
-```
-
-Create an index:
-
-```sql
-CREATE INDEX IX_Email
-ON Employee(Email);
-```
-
----
-
-### ❌ Implicit Conversion
-
-```sql
-WHERE EmployeeId = '100';
-```
-
-✅ Rewrite:
-
-```sql
-WHERE EmployeeId = 100;
-```
-
----
-
-# Index Seek vs Index Scan
-
-| Feature | Index Seek | Index Scan |
-|---------|------------|------------|
-| Reads | Only matching rows | Entire index (or a large range) |
-| Speed | Fast | Slower |
-| I/O | Low | High |
-| CPU | Low | Higher |
-| Uses Index Efficiently | ✅ Yes | ⚠️ Not fully |
-| Typical Complexity | O(log n) | O(n) |
-| Preferred? | ✅ Yes (when selective) | ⚠️ Sometimes necessary |
-
----
-
-# Important Interview Point
-
-> **Is an Index Scan always bad?**
-
-**No.**
-
-An Index Scan can be the best choice when:
-
-- Most rows are needed (high selectivity).
-- The table is small.
-- No selective predicate exists.
-- A sequential scan is cheaper than many random index lookups.
-
-The optimizer chooses the plan with the **lowest estimated cost**, so an Index Scan is not inherently a problem.
-
----
-
-# Interview Answer (1 Minute)
-
-> **"An Index Seek means SQL Server uses the index to navigate directly to the required rows, similar to finding a word in a dictionary. It reads only the relevant pages, resulting in low I/O and excellent performance. An Index Scan, on the other hand, reads the entire index or a large portion of it because it cannot efficiently locate the starting point or because scanning is estimated to be cheaper. Scans commonly occur due to missing indexes, non-SARGable predicates like `YEAR(DateColumn)`, leading wildcards such as `LIKE '%abc'`, implicit conversions, or queries that return a large percentage of the table. While seeks are generally preferred for selective queries, scans are not always bad—they can be the optimal plan depending on the data and query."**
+# Interview Answer (2-3 Minutes)
+
+> "When an API is slow, I follow a structured approach instead of guessing. First, I reproduce the issue using Postman or a load testing tool and measure the response time. Then, I add detailed logging or use Application Insights/OpenTelemetry to identify where the time is spent—whether in middleware, business logic, database, or external API calls.
+>
+> If the database is slow, I inspect the generated SQL, execution plan, and look for table scans, missing indexes, N+1 query issues, or inefficient EF Core queries. For external services, I measure each dependency individually and parallelize independent calls using `Task.WhenAll`. I also check for blocking calls like `.Result` or `.Wait()`, verify proper use of `IHttpClientFactory`, monitor CPU, memory, and garbage collection, and use caching where appropriate. Finally, I validate improvements through load testing with k6 or JMeter to ensure the optimization scales under production traffic."
