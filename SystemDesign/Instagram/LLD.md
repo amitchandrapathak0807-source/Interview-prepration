@@ -1,541 +1,106 @@
-# Low-Level Design (LLD) - Instagram (Deep Dive)
+# Absolutely. This is actually the approach I would recommend for a **10+ years interview**.
 
-> **Interview Level:** Senior Software Engineer / Tech Lead / Staff Engineer (10+ Years)
+The previous answers were **solution-oriented**.
 
-This explanation focuses on **how to think**, **why we make each design decision**, and **how the object model maps to the database**.
+For senior interviews, the interviewer is **not looking for the final schema or final classes**.
 
-> **Note:** In interviews, don't start by drawing classes. Start by understanding the business domain and modelling the real world.
+They want to know:
 
----
+- **Why did you create this table?**
+- **Why is this relationship One-to-Many?**
+- **Why did you choose a composite key?**
+- **Why not embed comments inside Post?**
+- **Why normalize?**
+- **What problem does this solve?**
+- **What happens when Instagram reaches 500 million users?**
 
-# 1. Why Do We Need LLD?
-
-Imagine your manager says:
-
-> "We need to build Instagram."
-
-Your first instinct might be to create a `User` class and a `Post` class.
-
-That is **too early**.
-
-A senior engineer first asks:
-
-- What problem are we solving?
-- Who uses the system?
-- What actions do they perform?
-- Which objects exist in the domain?
-- Which object owns which responsibility?
-- How will the design evolve when requirements change?
-
-LLD is the bridge between **business requirements** and **production-ready code**.
+A senior engineer spends **80% explaining the reasoning** and **20% drawing diagrams or writing code**.
 
 ---
 
-# 2. Think Like a Real Business
+# The Structure I Recommend (Much Better)
 
-Forget code for a moment.
-
-Imagine you're watching people use Instagram.
-
-### Amit opens Instagram
+Instead of
 
 ```text
-Amit logs in.
-```
-
-### Amit uploads a photo
-
-```text
-Photo = "Goa Vacation"
-Caption = "Amazing Sunset"
-```
-
-### Rahul follows Amit
-
-```text
-Rahul → Follow → Amit
-```
-
-### Priya likes the photo
-
-```text
-Priya → Like → Post
-```
-
-### Neha comments
-
-```text
-Beautiful ❤️
-```
-
-Without writing a single line of code, you have already discovered the main business objects.
-
----
-
-# 3. Finding Domain Entities
-
-A useful interview technique:
-
-> **Highlight the nouns in the requirement.**
-
-Example:
-
-```text
-User uploads a photo.
-
-Another user likes the photo.
-
-Someone comments on the photo.
-```
-
-Nouns:
-
-- User
-- Photo
-- Comment
-- Like
-
-These become entities.
-
----
-
-# Why Are These Entities?
-
-Because each has:
-
-- Identity
-- Data
-- Lifecycle
-- Relationships
-
-Example:
-
-A comment has:
-
-```text
-CommentId
-Text
-CreatedDate
-UserId
-PostId
-```
-
-It has its own identity.
-
-Therefore it deserves its own entity.
-
----
-
-# 4. Finding Relationships
-
-Let's examine each relationship carefully.
-
-## User → Post
-
-Question:
-
-Can one user create multiple posts?
-
-Yes.
-
-Can one post belong to multiple users?
-
-No.
-
-Relationship:
-
-```text
-User
- 1
- |
- |
- *
-Post
-```
-
-This is called:
-
-**One-to-Many**
-
----
-
-## Why Not Store Posts Inside User Table?
-
-Bad design:
-
-```text
-User
-
-Posts =
-[
-Post1,
-Post2,
-Post3
-]
-```
-
-Problems:
-
-- Cannot query efficiently.
-- Difficult to paginate.
-- Large user records.
-- Difficult to index.
-
-Instead:
-
-```text
-User
+Entity
 
 ↓
 
-Post
-
-UserId
-```
-
-The database naturally models the relationship.
-
----
-
-## User → Follow
-
-Question:
-
-Can Amit follow Rahul?
-
-Yes.
-
-Can Rahul follow Amit?
-
-Yes.
-
-Can Rahul follow Neha?
-
-Yes.
-
-Relationship:
-
-```text
-User
-
-*
-
-|
-
-|
-
-*
-
-User
-```
-
-Many-to-Many.
-
-This requires a junction table.
-
----
-
-## Why Not Store Followers in User Table?
-
-Wrong:
-
-```text
-User
-
-Followers
-
-101
-
-205
-
-400
-
-900
-```
-
-Problems:
-
-- Unlimited growth.
-- Difficult indexing.
-- Difficult joins.
-- Poor normalization.
-
-Correct:
-
-```text
-Follow Table
-
-FollowerId
-
-FollowingId
-```
-
----
-
-# 5. What Belongs Inside User?
-
-Many developers make this mistake.
-
-```csharp
-class User
-{
-    UploadPhoto()
-
-    LikePost()
-
-    DeleteComment()
-
-    GenerateFeed()
-
-    SendNotification()
-
-    Search()
-}
-```
-
-This is terrible.
-
-Why?
-
-Because User now knows everything.
-
-It violates:
-
-- Single Responsibility Principle.
-- Open/Closed Principle.
-- Separation of Concerns.
-
----
-
-# What Should User Really Represent?
-
-Think of User as a real person.
-
-A person has:
-
-```text
-Id
-
-Username
-
-Email
-
-DOB
-
-Profile
-```
-
-That's it.
-
-Business operations belong elsewhere.
-
----
-
-# Good Design
-
-```text
-User
+Schema
 
 ↓
 
-UserService
-
-↓
-
-PostService
-
-↓
-
-LikeService
-
-↓
-
-NotificationService
+Example
 ```
 
-Each service owns one business capability.
-
----
-
-# 6. Why Do We Need Services?
-
-Let's examine uploading a photo.
-
-User clicks:
+We should always explain in this order
 
 ```text
-Upload
+Problem
+
+↓
+
+Why this problem exists
+
+↓
+
+Real World Example
+
+↓
+
+Possible Solutions
+
+↓
+
+Which solution we choose
+
+↓
+
+Advantages
+
+↓
+
+Disadvantages
+
+↓
+
+Database Schema
+
+↓
+
+Explain Every Column
+
+↓
+
+Explain Every Key
+
+↓
+
+Explain Relationships
+
+↓
+
+SQL Queries
+
+↓
+
+Indexes
+
+↓
+
+Real Production Considerations
 ```
 
-What happens?
-
-### Step 1
-
-Authenticate.
-
-### Step 2
-
-Validate image.
-
-### Step 3
-
-Resize image.
-
-### Step 4
-
-Generate thumbnail.
-
-### Step 5
-
-Upload to Blob Storage.
-
-### Step 6
-
-Save metadata.
-
-### Step 7
-
-Generate feed.
-
-### Step 8
-
-Notify followers.
-
-Should all this live inside:
-
-```csharp
-User.UploadPhoto()
-```
-
-No.
-
-That's why we create:
-
-```text
-PostService
-```
+This is exactly how Architects explain systems.
 
 ---
 
-# 7. Responsibilities
+# Example
 
-## User
+Let's take the **User → Post** relationship.
 
-Responsible for
-
-- Identity
-- Profile
-
-NOT
-
-- Notifications
-- Feed
-- Search
-- Blob upload
-
----
-
-## Post
-
-Responsible for
-
-- Caption
-- Media
-- Creation date
-
-NOT
-
-- Sending push notifications.
-
----
-
-## Like
-
-Responsible for
-
-- Who liked.
-- Which post.
-
-Nothing else.
-
----
-
-## Comment
-
-Responsible for
-
-- Text.
-- Owner.
-- Timestamp.
-
----
-
-# 8. Database Schema
-
-Now that we understand the domain, the database becomes much easier.
-
----
-
-# USER
-
-```sql
-CREATE TABLE Users
-(
-    UserId UNIQUEIDENTIFIER PRIMARY KEY,
-
-    UserName NVARCHAR(100) UNIQUE,
-
-    Email NVARCHAR(200),
-
-    PasswordHash NVARCHAR(MAX),
-
-    ProfilePictureUrl NVARCHAR(MAX),
-
-    Bio NVARCHAR(500),
-
-    CreatedAt DATETIME2
-)
-```
-
----
-
-## Why these columns?
-
-| Column | Reason |
-|----------|--------|
-| UserId | Primary Key |
-| UserName | Login/Search |
-| Email | Authentication |
-| PasswordHash | Security |
-| Bio | Profile |
-| ProfilePictureUrl | Display |
-
----
-
-# POST
-
-```sql
-CREATE TABLE Posts
-(
-    PostId UNIQUEIDENTIFIER PRIMARY KEY,
-
-    UserId UNIQUEIDENTIFIER,
-
-    Caption NVARCHAR(MAX),
-
-    MediaUrl NVARCHAR(MAX),
-
-    MediaType INT,
-
-    CreatedAt DATETIME2,
-
-    FOREIGN KEY(UserId)
-
-    REFERENCES Users(UserId)
-)
-```
-
-Relationship
+Instead of simply writing
 
 ```text
 User
@@ -544,335 +109,634 @@ User
 
 ↓
 
-Many Posts
+*
+
+Post
 ```
+
+I would explain it like this.
 
 ---
 
-# COMMENT
+# Step 1 - Understand the Business
 
-```sql
-CREATE TABLE Comments
-(
-    CommentId UNIQUEIDENTIFIER PRIMARY KEY,
+Imagine Instagram has just launched.
 
-    UserId UNIQUEIDENTIFIER,
+There is only one feature.
 
-    PostId UNIQUEIDENTIFIER,
+> Users can upload photos.
 
-    Text NVARCHAR(MAX),
+Nothing else exists.
 
-    CreatedAt DATETIME2
-)
-```
+Now ask yourself a simple question.
 
-Relationship
+> **Where should a photo live?**
+
+Inside the User?
+
+Or separately?
+
+Let's think.
+
+---
+
+# Step 2 - First Thought (Wrong Design)
+
+Most beginners think like this.
 
 ```text
 User
 
-↓
+Id
 
-Comment
+Name
+
+Posts[]
+
+```
+
+Looks good.
+
+One user has many posts.
+
+Why not simply store the posts inside User?
+
+---
+
+# Step 3 - Why This Design Fails
+
+Imagine Amit uploads
+
+```text
+Photo 1
+
+Photo 2
+
+Photo 3
+
+Photo 4
+
+Photo 5
+
+...
+
+Photo 20,000
+```
+
+Now imagine Instagram has
+
+```
+500 Million Users
+```
+
+Some celebrity has
+
+```
+80,000 Posts
+```
+
+Question
+
+Should all 80,000 posts be loaded every time we fetch the User?
+
+Example
+
+```sql
+SELECT *
+
+FROM Users
+
+WHERE UserId = 10
+```
+
+Do we really need
+
+```
+80,000 Posts
+```
+
+No.
+
+We only wanted
+
+```text
+Username
+
+Profile Picture
+
+Bio
+```
+
+Now we're unnecessarily loading
+
+```
+80,000 Photos
+```
+
+This is wasteful.
+
+---
+
+# Step 4 - Another Problem
+
+Suppose we want
+
+```
+Latest 20 Posts
+```
+
+How will we do that?
+
+If posts are stored inside User
+
+We first load
+
+```
+80,000 Posts
+```
+
+Then
+
+Sort.
+
+Then
+
+Return
+
+20.
+
+Terrible performance.
+
+---
+
+# Step 5 - Another Problem
+
+Suppose a photo gets deleted.
+
+Now
+
+Entire User row changes.
+
+Huge update.
+
+Large row locking.
+
+Bad concurrency.
+
+---
+
+# Step 6 - So What Should We Do?
+
+Instead
+
+Separate
+
+```
+User
 
 ↓
 
 Post
 ```
 
----
+Now
 
-# LIKE
-
-```sql
-CREATE TABLE Likes
-(
-    UserId UNIQUEIDENTIFIER,
-
-    PostId UNIQUEIDENTIFIER,
-
-    CreatedAt DATETIME2,
-
-    PRIMARY KEY(UserId,PostId)
-)
-```
-
-Why Composite Key?
-
-Because
-
-One user
-
-Cannot like
-
-Same post twice.
-
----
-
-# FOLLOW
-
-```sql
-CREATE TABLE Follows
-(
-    FollowerId UNIQUEIDENTIFIER,
-
-    FollowingId UNIQUEIDENTIFIER,
-
-    CreatedAt DATETIME2,
-
-    PRIMARY KEY
-    (
-        FollowerId,
-
-        FollowingId
-    )
-)
-```
-
-Relationship
+User stores only
 
 ```text
-Rahul
+Identity
+```
 
-↓
+Post stores
 
-Follows
+```text
+Photos
+```
 
-↓
+Now
 
+Fetching User
+
+doesn't load Posts.
+
+Fetching Posts
+
+doesn't load User unnecessarily.
+
+---
+
+# Step 7 - Relationship
+
+Question
+
+Can
+
+One User
+
+have
+
+Multiple Posts?
+
+Yes.
+
+Can
+
+One Post
+
+belong
+
+to Multiple Users?
+
+No.
+
+Therefore
+
+Relationship becomes
+
+```text
+User
+
+1
+
+|
+
+|
+
+*
+
+Post
+```
+
+This is called
+
+```
+One-to-Many
+```
+
+---
+
+# Step 8 - Database Schema
+
+Now we are finally ready to design the table.
+
+```sql
+CREATE TABLE Users
+(
+    UserId UNIQUEIDENTIFIER PRIMARY KEY,
+
+    UserName NVARCHAR(100),
+
+    Email NVARCHAR(200),
+
+    Bio NVARCHAR(500)
+);
+```
+
+Notice
+
+There is
+
+NO
+
+Posts column.
+
+Why?
+
+Because posts live separately.
+
+---
+
+Now
+
+Post Table
+
+```sql
+CREATE TABLE Posts
+(
+    PostId UNIQUEIDENTIFIER PRIMARY KEY,
+
+    UserId UNIQUEIDENTIFIER NOT NULL,
+
+    Caption NVARCHAR(MAX),
+
+    MediaUrl NVARCHAR(MAX),
+
+    CreatedAt DATETIME2,
+
+    FOREIGN KEY(UserId)
+
+    REFERENCES Users(UserId)
+);
+```
+
+---
+
+# Step 9 - Explain Every Column
+
+Now explain each column.
+
+## PostId
+
+Question
+
+Why do we need it?
+
+Because every post must be uniquely identifiable.
+
+Imagine
+
+```
+Delete Post
+
+Edit Post
+
+Like Post
+
+Share Post
+```
+
+How will we identify which post?
+
+Using
+
+```
+PostId
+```
+
+---
+
+## UserId
+
+Question
+
+Why not store Username?
+
+Imagine
+
+```
 Amit
 ```
 
-This table stores only relationships.
+changes username to
+
+```
+Amit_Pathak
+```
+
+Now every post breaks.
+
+Instead
+
+Store
+
+```
+UserId
+```
+
+because
+
+Primary Keys never change.
 
 ---
 
-# NOTIFICATION
+## Caption
 
-```sql
-CREATE TABLE Notifications
-(
-    NotificationId UNIQUEIDENTIFIER PRIMARY KEY,
+Stores
 
-    UserId UNIQUEIDENTIFIER,
+User text.
 
-    Type INT,
+Nothing else.
 
-    Message NVARCHAR(MAX),
+---
 
-    IsRead BIT,
+## MediaUrl
 
-    CreatedAt DATETIME2
-)
+Question
+
+Why not store Image Binary?
+
+Because images are
+
+```
+2 MB
+
+5 MB
+
+50 MB
+```
+
+Databases are optimized for
+
+Structured Data
+
+NOT
+
+Large Binary Files.
+
+Therefore
+
+Image lives in
+
+```
+Azure Blob
+
+Amazon S3
+
+Google Cloud Storage
+```
+
+Database stores
+
+Only
+
+```
+MediaUrl
 ```
 
 ---
 
-# SAVED POSTS
+## CreatedAt
 
-```sql
-CREATE TABLE SavedPosts
-(
-    UserId UNIQUEIDENTIFIER,
+Question
 
-    PostId UNIQUEIDENTIFIER,
+Why?
 
-    SavedAt DATETIME2,
+Because
 
-    PRIMARY KEY
-    (
-        UserId,
+Instagram Feed
 
-        PostId
-    )
-)
+depends on
+
+```
+Latest Posts
+```
+
+Need
+
+Sorting
+
+```
+ORDER BY CreatedAt DESC
 ```
 
 ---
 
-# Complete Database ER Diagram
+# Step 10 - Explain Keys
+
+Now discuss Keys.
+
+---
+
+## Primary Key
+
+```
+PostId
+```
+
+Why?
+
+Must uniquely identify one row.
+
+Cannot be duplicated.
+
+Cannot be NULL.
+
+---
+
+## Foreign Key
+
+```
+UserId
+```
+
+Why?
+
+Maintains referential integrity.
+
+Question
+
+Can we insert
 
 ```text
-                 USERS
-+-----------------------------------+
-| PK UserId                         |
-| UserName                          |
-| Email                             |
-| PasswordHash                      |
-| Bio                               |
-| ProfilePictureUrl                 |
-| CreatedAt                         |
-+----------------+------------------+
-                 |
-                 | 1
-                 |
-                 | *
-          +------v------------------+
-          |        POSTS            |
-          +-------------------------+
-          | PK PostId               |
-          | FK UserId               |
-          | Caption                 |
-          | MediaUrl                |
-          | MediaType               |
-          | CreatedAt               |
-          +------+------------------+
-                 |
-        +--------+---------+
-        |                  |
-      1 |                  | 1
-        |                  |
-        | *                | *
-+-------v---------+   +----v-----------+
-|   COMMENTS      |   |    LIKES       |
-+-----------------+   +----------------+
-| PK CommentId    |   | PK UserId      |
-| FK PostId       |   | PK PostId      |
-| FK UserId       |   | CreatedAt      |
-| Text            |   +----------------+
-| CreatedAt       |
-+-----------------+
-
-USERS
-   *
-   |
-   |
-   *
-FOLLOWS
-+---------------------------+
-| PK FollowerId             |
-| PK FollowingId            |
-| CreatedAt                 |
-+---------------------------+
-
-USERS
-   *
-   |
-   |
-   *
-SAVED POSTS
-+---------------------------+
-| PK UserId                 |
-| PK PostId                 |
-| SavedAt                   |
-+---------------------------+
-
-USERS
-   1
-   |
-   |
-   *
-NOTIFICATIONS
-+---------------------------+
-| PK NotificationId         |
-| FK UserId                 |
-| Type                      |
-| Message                   |
-| IsRead                    |
-| CreatedAt                 |
-+---------------------------+
+UserId = 500
 ```
+
+if User 500 doesn't exist?
+
+No.
+
+Database prevents it.
 
 ---
 
-# Why Normalize the Database?
+# Step 11 - Explain Index
 
-Suppose we stored comments inside the `Posts` table:
+Most candidates stop after Primary Key.
 
-```text
-Post
+Senior Engineers continue.
 
-Comment1
+Question
 
-Comment2
-
-Comment3
-
-Comment4
-
-Comment5
-```
-
-Problems:
-
-- Variable-sized rows.
-- Difficult querying.
-- Impossible to index comments efficiently.
-- Updating a single comment rewrites the entire row.
-
-Normalization solves these issues by storing comments separately.
-
----
-
-# Indexing Strategy
-
-A production system should create indexes based on query patterns.
-
-```sql
-CREATE INDEX IX_Post_UserId
-ON Posts(UserId);
-```
-
-Used for:
+What query happens most?
 
 ```sql
 SELECT *
+
 FROM Posts
-WHERE UserId = @UserId;
+
+WHERE UserId = @UserId
+
+ORDER BY CreatedAt DESC
 ```
 
----
+Without Index
+
+Database scans
+
+Entire table.
+
+Imagine
+
+```
+2 Billion Posts
+```
+
+Terrible.
+
+Therefore
 
 ```sql
-CREATE INDEX IX_Comments_PostId
-ON Comments(PostId);
+CREATE INDEX IX_Post_User
+
+ON Posts(UserId,CreatedAt DESC);
 ```
 
-Used for:
+Now
+
+Only Amit's posts are scanned.
+
+---
+
+# Step 12 - Real Example
+
+Instagram Home Page
+
+Needs
+
+```
+Latest 20 Posts
+```
+
+Query
 
 ```sql
-SELECT *
-FROM Comments
-WHERE PostId = @PostId;
+SELECT TOP 20 *
+
+FROM Posts
+
+WHERE UserId=@UserId
+
+ORDER BY CreatedAt DESC
 ```
 
----
+This query uses
 
-```sql
-CREATE INDEX IX_Follows_FollowerId
-ON Follows(FollowerId);
+```
+IX_Post_User
 ```
 
-Used for:
-
-```sql
-SELECT FollowingId
-FROM Follows
-WHERE FollowerId = @UserId;
-```
+and becomes extremely fast.
 
 ---
 
-# Interview Questions & Answers (10+ Years Experience)
+# This is how I would explain **every single entity**.
 
-## Q1. Why do we separate entities and services?
+For example:
 
-### Answer
+- **User** → Why separate Profile? Why `UserId`? Why not username as key?
+- **Comment** → Why separate table? Why not store comments in `Posts`? Explain growth, normalization, locking, and indexing.
+- **Like** → Why junction table? Why composite primary key `(UserId, PostId)`? How does it prevent duplicate likes?
+- **Follow** → Why many-to-many? Why two foreign keys? Why index both `FollowerId` and `FollowingId`?
+- **Notification** → Why asynchronous? Why separate service? Why store `IsRead`?
+- **Feed** → Why isn't the feed a permanent table in many systems? When should it be cached vs generated on demand?
 
-Entities model the **business state** (e.g., `User`, `Post`, `Comment`) and should contain only behavior directly related to that state. Services orchestrate workflows that involve multiple entities or external systems (e.g., uploading media, sending notifications, generating feeds). Separating them improves maintainability, testability, and adherence to the Single Responsibility Principle.
+Each entity would follow the same pattern:
+
+1. Business problem.
+2. Why naive solutions fail.
+3. Chosen design.
+4. Relationship explanation.
+5. Database schema.
+6. Column-by-column explanation.
+7. Key explanation.
+8. Index explanation.
+9. Example queries.
+10. Production considerations.
 
 ---
 
-## Q2. Why is the `Follows` table implemented as a junction table?
+# My Recommendation
 
-### Answer
+Instead of creating a **20-page LLD document**, create a **100+ page interview handbook** where **every entity** is explained in this depth.
 
-Following is a **many-to-many** relationship: one user can follow many users, and one user can be followed by many users. A junction table (`FollowerId`, `FollowingId`) models this efficiently, supports indexing, avoids data duplication, and allows additional metadata (e.g., `CreatedAt`) to be stored.
-
----
-
-## Q3. Why use a composite primary key for the `Likes` table?
-
-### Answer
-
-The business rule is that **a user can like a specific post only once**. A composite primary key `(UserId, PostId)` enforces this rule at the database level, preventing duplicate likes even under concurrent requests. It also avoids the need for a separate surrogate key for this relationship.
+By the end, the reader won't just memorize the schema—they'll understand **why it was designed that way**, which is what distinguishes a senior engineer from someone who has only memorized interview answers.
